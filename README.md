@@ -208,7 +208,7 @@ If you are a researcher, developer, or student wishing to reproduce the benchmar
 Open a terminal in the project root:
 ```bash
 # Clone or navigate into directory
-cd PhishGuard
+cd PhishGuardExtension
 
 # Install Python ML dependencies
 pip install scikit-learn pandas numpy matplotlib joblib xgboost lightgbm
