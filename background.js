@@ -1,0 +1,714 @@
+// background.js
+import {
+  loadModel,
+  extractFeaturesFromUrl,
+  predictProbability,
+  getModelInfo
+} from './scripts/model_predict.js';
+
+const MODEL_PATH = chrome.runtime.getURL('model/model.json');
+const BLOCK_THRESHOLD = 0.80; // Immediate block
+const WARN_THRESHOLD = 0.70;  // Warning banner + Safe Mode
+
+let modelLoaded = false;
+let allowlist = new Set();
+let currentModelVersion = '1.0.0';
+let allowlistSource = 'packaged';
+
+// One-time allow set — backed by chrome.storage.session so it survives service worker restarts
+// (chrome.storage.session is cleared when the browser is closed, but persists across SW suspensions)
+async function isOneTimeAllowed(domain) {
+  const data = await chrome.storage.session.get('oneTimeAllowSet');
+  const set = data.oneTimeAllowSet || [];
+  return set.includes(domain);
+}
+
+async function addOneTimeAllow(domain) {
+  const data = await chrome.storage.session.get('oneTimeAllowSet');
+  const set = data.oneTimeAllowSet || [];
+  if (!set.includes(domain)) set.push(domain);
+  await chrome.storage.session.set({ oneTimeAllowSet: set });
+}
+
+async function consumeOneTimeAllow(domain) {
+  const data = await chrome.storage.session.get('oneTimeAllowSet');
+  const set = (data.oneTimeAllowSet || []).filter(d => d !== domain);
+  await chrome.storage.session.set({ oneTimeAllowSet: set });
+}
+
+// Initialize Stats & Scheduled OTA Alarms
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.get(['stats'], (res) => {
+    if (!res.stats) {
+      chrome.storage.local.set({
+        stats: { scanned: 0, blocked: 0, totalRisk: 0, falsePositives: 0, falseNegatives: 0 },
+        scanLogs: [],
+        pending_training_data: [],
+        allowlist: []
+      });
+    }
+  });
+
+  // Schedule daily background OTA check (every 24 hours)
+  chrome.alarms.create('otaUpdateCheck', { periodInMinutes: 1440 });
+});
+
+// Periodic Alarm Listener for OTA Updates
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'otaUpdateCheck') {
+    checkForOTAUpdates(false);
+  }
+});
+
+// Over-The-Air (OTA) Model & Allowlist Updater
+async function checkForOTAUpdates(manual = false) {
+  let localVersion = '1.0.0';
+  try {
+    const config = await chrome.storage.local.get(['ota_endpoint', 'model_version']);
+    localVersion = config.model_version || currentModelVersion || '1.0.0';
+    const endpoint = config.ota_endpoint || 'https://raw.githubusercontent.com/Girinadh007/PhishGuard/main/model';
+    
+    let versionResp;
+    try {
+      versionResp = await fetch(`${endpoint}/version.json?_=${Date.now()}`, { cache: 'no-cache' });
+    } catch (netErr) {
+      await chrome.storage.local.set({ last_ota_check: Date.now() });
+      return {
+        success: true,
+        updated: false,
+        version: localVersion,
+        message: `Offline mode: packaged model rules v${localVersion} active.`
+      };
+    }
+
+    if (versionResp.status === 404) {
+      // Remote repository has not published a higher OTA release yet
+      await chrome.storage.local.set({ last_ota_check: Date.now() });
+      return {
+        success: true,
+        updated: false,
+        version: localVersion,
+        message: `Up to date: running model v${localVersion} (remote channel is on baseline).`
+      };
+    }
+
+    if (!versionResp.ok) throw new Error(`Remote repository returned HTTP ${versionResp.status}`);
+    const remoteMeta = await versionResp.json();
+    
+    if (remoteMeta.version && remoteMeta.version > localVersion) {
+      // Download updated model
+      const modelResp = await fetch(`${endpoint}/model.json?_=${Date.now()}`, { cache: 'no-cache' });
+      if (!modelResp.ok) throw new Error(`Failed to download model.json (HTTP ${modelResp.status})`);
+      const newModel = await modelResp.json();
+
+      if (!newModel.trees || !newModel.features) {
+        throw new Error('Downloaded model is missing required schema');
+      }
+
+      let newAllowlist = null;
+      if (remoteMeta.allowlist_updated) {
+        const allowResp = await fetch(`${endpoint}/allowlist.json?_=${Date.now()}`, { cache: 'no-cache' });
+        if (allowResp.ok) newAllowlist = await allowResp.json();
+      }
+
+      // Hot reload model in memory
+      await loadModel(newModel);
+      currentModelVersion = remoteMeta.version;
+
+      const toSave = {
+        ota_model: newModel,
+        model_version: remoteMeta.version,
+        last_ota_check: Date.now()
+      };
+      if (newAllowlist && Array.isArray(newAllowlist)) {
+        toSave.ota_allowlist = newAllowlist;
+        allowlist = new Set(newAllowlist);
+        allowlistSource = 'ota';
+      }
+      await chrome.storage.local.set(toSave);
+
+      return {
+        success: true,
+        updated: true,
+        version: remoteMeta.version,
+        message: `Successfully updated to Model v${remoteMeta.version}!`
+      };
+    } else {
+      await chrome.storage.local.set({ last_ota_check: Date.now() });
+      return {
+        success: true,
+        updated: false,
+        version: localVersion,
+        message: `You are on the latest model rules (v${localVersion}).`
+      };
+    }
+  } catch (err) {
+    await chrome.storage.local.set({ last_ota_check: Date.now() });
+    return {
+      success: false,
+      error: err.message,
+      message: `Update check failed: ${err.message}. Packaged baseline (v${localVersion}) remains active.`
+    };
+  }
+}
+
+// Load Active Model & Allowlist (OTA Cache with Packaged Fallback)
+(async () => {
+  try {
+    const storage = await chrome.storage.local.get(['ota_allowlist', 'ota_model', 'model_version']);
+    
+    // 1. Allowlist loading
+    if (storage.ota_allowlist && Array.isArray(storage.ota_allowlist)) {
+      allowlist = new Set(storage.ota_allowlist);
+      allowlistSource = 'ota';
+      console.log(`[PhishGuard OTA] Loaded ${allowlist.size} domains from cached OTA allowlist`);
+    } else {
+      const allowlistUrl = chrome.runtime.getURL('model/allowlist.json');
+      const response = await fetch(allowlistUrl);
+      const allowlistArray = await response.json();
+      allowlist = new Set(allowlistArray);
+      allowlistSource = 'packaged';
+      console.log(`[PhishGuard] Loaded ${allowlist.size} domains from packaged allowlist`);
+    }
+
+    // 2. ML Model loading (Flattened Typed-Array JIT Engine)
+    if (storage.ota_model && typeof storage.ota_model === 'object') {
+      await loadModel(storage.ota_model);
+      currentModelVersion = storage.model_version || storage.ota_model.version || '1.1.0-ota';
+      modelLoaded = true;
+      console.log(`[PhishGuard OTA] Loaded AI model v${currentModelVersion} from OTA cache`);
+    } else {
+      await loadModel(MODEL_PATH);
+      currentModelVersion = '1.0.0';
+      modelLoaded = true;
+      console.log('[PhishGuard] Packaged AI model loaded into Flattened Engine');
+    }
+    await sanitizeHistoricalLogs();
+  } catch (err) {
+    console.error('Model load failed, attempting packaged fallback:', err);
+    try {
+      await loadModel(MODEL_PATH);
+      modelLoaded = true;
+      await sanitizeHistoricalLogs();
+    } catch (e) {}
+  }
+})();
+
+// Multi-tenant application hosting providers where arbitrary user subdomains should NOT inherit parent allowlisting
+const MULTI_TENANT_HOSTS = new Set([
+  'github.io', 'gitlab.io', 'vercel.app', 'netlify.app', 'firebaseapp.com',
+  'web.app', 'pages.dev', 'workers.dev', 'herokuapp.com', 'glitch.me',
+  'azurewebsites.net', 'appspot.com', 'cloudfront.net', 'ngrok.io', 'ngrok-free.app',
+  'loca.lt', 'trycloudflare.com', 'surge.sh', 'render.com', 'onrender.com'
+]);
+
+function isDomainAllowlisted(hostname) {
+  if (!hostname || typeof hostname !== 'string') return false;
+  let domain = hostname.toLowerCase().trim();
+  if (domain.includes(':')) domain = domain.split(':')[0]; // strip port if present
+  if (domain.startsWith('www.')) domain = domain.substring(4);
+
+  // 1. Direct match in allowlist
+  if (allowlist.has(domain)) return true;
+
+  // 2. Check parent domain hierarchy for subdomains (e.g. accounts.google.com -> google.com, novartis.wd3.myworkdayjobs.com -> myworkdayjobs.com)
+  const parts = domain.split('.');
+  for (let i = 1; i < parts.length - 1; i++) {
+    const parentDomain = parts.slice(i).join('.');
+    if (MULTI_TENANT_HOSTS.has(parentDomain)) {
+      break; // Stop at multi-tenant host: do not inherit allowlist for arbitrary user-created subdomains
+    }
+    if (allowlist.has(parentDomain)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Clean up any historical false positives in stored scanLogs for allowlisted domains
+async function sanitizeHistoricalLogs() {
+  try {
+    const data = await chrome.storage.local.get(['scanLogs', 'stats']);
+    if (data.scanLogs && Array.isArray(data.scanLogs)) {
+      let modified = false;
+      let fixedBlocks = 0;
+      const sanitizedLogs = data.scanLogs.map(log => {
+        if (log.domain && isDomainAllowlisted(log.domain)) {
+          if (log.risk > 0 || log.action !== 'allowed' || log.category !== 'safe' || (log.flags && log.flags.includes('Hidden-Iframe'))) {
+            modified = true;
+            if (log.action === 'blocked') fixedBlocks++;
+            return {
+              ...log,
+              risk: 0.0,
+              action: 'allowed',
+              category: 'safe',
+              flags: 'Allowlist-Verified',
+              reason: 'Verified Safe via Top 100k Allowlist'
+            };
+          }
+        }
+        return log;
+      });
+      if (modified) {
+        const stats = data.stats || { scanned: 0, blocked: 0, totalRisk: 0, falsePositives: 0, falseNegatives: 0 };
+        if (fixedBlocks > 0) {
+          stats.blocked = Math.max(0, (stats.blocked || 0) - fixedBlocks);
+        }
+        await chrome.storage.local.set({ scanLogs: sanitizedLogs, stats });
+        console.log('[PhishGuard] Sanitized historical scan logs for verified allowlist domains.');
+      }
+    }
+  } catch (e) {
+    console.error('Scan logs sanitization failed:', e);
+  }
+}
+
+function isRestrictedUrl(url) {
+  if (!url || typeof url !== 'string') return true;
+  // Only evaluate web protocols (http / https)
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return true;
+
+  // Extension internal resources & pages
+  try {
+    const extBase = chrome.runtime.getURL('');
+    if (url.startsWith(extBase)) return true;
+  } catch (e) {}
+
+  if (
+    url.startsWith('chrome-extension://') ||
+    url.startsWith('moz-extension://') ||
+    url.startsWith('chrome://') ||
+    url.startsWith('about:') ||
+    url.startsWith('edge://') ||
+    url.startsWith('file://') ||
+    url.startsWith('devtools://') ||
+    url.startsWith('view-source:') ||
+    url.includes('dashboard.html') ||
+    url.includes('blocked.html') ||
+    url.includes('popup.html')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+// Security Logger & Stats Tracker
+async function logSecurityEvent(url, risk, features = {}, extraFlags = [], explicitAction = null, reason = '') {
+  if (isRestrictedUrl(url)) return;
+  let domain = '';
+  try {
+    domain = new URL(url).hostname;
+  } catch (e) {
+    return;
+  }
+  if (!domain || domain === 'localhost' || domain === '127.0.0.1') return;
+
+  const flags = [...extraFlags];
+  if (features && features.is_tunnel) flags.push("Tunnel");
+  if (features && features.is_homograph) flags.push("Homograph");
+  if (features && features.suspicious_tld) flags.push("Risk-TLD");
+  if (features && features.subdomain_count > 2) flags.push("Subdomains");
+  if (features && features.brand_impersonation) flags.push("Brand-Impersonation");
+  if (features && (features.tok_login || features.tok_signin || features.tok_auth)) flags.push("Login-Target");
+
+  const isAllowlisted = isDomainAllowlisted(domain) || extraFlags.includes('Allowlist-Verified');
+  if (isAllowlisted) {
+    risk = 0.0;
+    if (!flags.includes('Allowlist-Verified')) flags.push('Allowlist-Verified');
+  }
+
+  // Determine action and category
+  const isBlocked = !isAllowlisted && (explicitAction === 'blocked' || risk >= BLOCK_THRESHOLD);
+  const isSafeMode = !isAllowlisted && (explicitAction === 'safe_mode' || (risk >= WARN_THRESHOLD && !isBlocked));
+  const action = isAllowlisted ? 'allowed' : (explicitAction || (isBlocked ? 'blocked' : (isSafeMode ? 'safe_mode' : 'allowed')));
+
+  const flagsLower = flags.map(f => f.toLowerCase());
+  const isFakeLogin = !isAllowlisted && (flagsLower.some(f => 
+    f.includes('fake-login') || 
+    f.includes('brand-impersonation') || 
+    f.includes('exfiltration-endpoint') || 
+    f.includes('insecure-password') || 
+    f.includes('cross-domain-form')
+  ) || ((flagsLower.includes('login-target') || /login|signin|account|auth|password|banking/i.test(url)) && risk >= 0.70));
+
+  let category = 'safe';
+  if (isAllowlisted) {
+    category = 'safe';
+  } else if (isFakeLogin) {
+    category = 'fake_login';
+  } else if (isBlocked) {
+    category = 'threat';
+  } else if (isSafeMode || risk >= 0.30) {
+    category = 'suspicious';
+  }
+
+  chrome.storage.local.get(['stats', 'scanLogs', 'pending_training_data', 'safeMode'], (res) => {
+    let stats = res.stats || { scanned: 0, blocked: 0, totalRisk: 0, falsePositives: 0, falseNegatives: 0 };
+    let logs = res.scanLogs || [];
+    let trainingData = res.pending_training_data || [];
+
+    const now = Date.now();
+    // Check if domain was recently logged within 15 seconds to merge (e.g. Navigation followed by DOM Analysis)
+    const recentIndex = logs.slice().reverse().findIndex(l => l.domain === domain && (now - (l.ts || 0)) < 15000);
+
+    if (recentIndex !== -1) {
+      const actualIdx = logs.length - 1 - recentIndex;
+      const existing = logs[actualIdx];
+
+      const existingFlags = existing.flags ? existing.flags.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const mergedFlags = Array.from(new Set([...existingFlags, ...flags]));
+
+      const isAllowlistedEntry = isAllowlisted || mergedFlags.includes('Allowlist-Verified');
+      const mergedRisk = isAllowlistedEntry ? 0.0 : Math.max(existing.risk || 0, risk);
+      if (existing.action !== 'blocked' && isBlocked && !isAllowlistedEntry) {
+        stats.blocked++;
+      }
+
+      existing.risk = mergedRisk;
+      existing.flags = mergedFlags.join(', ');
+      existing.action = isAllowlistedEntry ? 'allowed' : (isBlocked ? 'blocked' : (existing.action === 'blocked' ? 'blocked' : action));
+      if (isAllowlistedEntry) {
+        existing.category = 'safe';
+      } else if (category === 'fake_login' || existing.category === 'fake_login') {
+        existing.category = 'fake_login';
+      } else if (isBlocked || existing.category === 'threat') {
+        existing.category = 'threat';
+      } else if (mergedRisk >= 0.30) {
+        existing.category = 'suspicious';
+      }
+      if (reason && !existing.reason) existing.reason = reason;
+      if (url && !existing.url) existing.url = url;
+      existing.ts = now;
+    } else {
+      stats.scanned++;
+      stats.totalRisk += risk;
+      if (isBlocked) stats.blocked++;
+
+      logs.push({
+        ts: now,
+        domain: domain,
+        url: url,
+        risk: risk,
+        flags: flags.join(', '),
+        action: action,
+        category: category,
+        reason: reason || ''
+      });
+
+      if (risk > 0.30) {
+        trainingData.push({ url, risk, ts: now });
+      }
+    }
+
+    // Keep logs manageable
+    if (logs.length > 500) logs.shift();
+    if (trainingData.length > 1000) trainingData.shift();
+
+    chrome.storage.local.set({ stats, scanLogs: logs, pending_training_data: trainingData });
+
+    // Activate Safe Mode if Risk is High or User Enabled it
+    const shouldEnforceSafeMode = (risk >= WARN_THRESHOLD) || !!res.safeMode;
+    if (shouldEnforceSafeMode && action !== 'blocked') {
+      applySafeModeProtections(url, risk);
+    }
+  });
+}
+
+function applySafeModeProtections(url, risk) {
+  if (isRestrictedUrl(url)) return;
+  chrome.tabs.query({ url: url }, (tabs) => {
+    tabs.forEach(tab => {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (r) => {
+          window.phishGuardRisk = r;
+          console.log(`[PhishGuard] Safe Mode Active (Risk: ${Math.round(r * 100)}%)`);
+          // Disable auto-fill and password fields protection
+          document.querySelectorAll('input[type="password"]').forEach(i => {
+            i.setAttribute('autocomplete', 'off');
+            i.style.border = '2px solid #ef4444';
+          });
+          // Optional: Inject warning banner
+        },
+        args: [risk]
+      }).catch(() => { });
+    });
+  });
+}
+
+// Local cache for RDAP lookups
+const domainAgeCache = new Map();
+
+async function checkDomainAge(hostname, tabId, url, currentRisk) {
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return;
+    const parts = hostname.split('.');
+    if (parts.length < 2) return;
+    
+    // For TLDs like .co.uk, this is rough, but mostly works for top-level detection
+    let rootDomain = parts.slice(-2).join('.');
+    if (parts.length > 2 && (parts[parts.length - 2].length <= 3)) {
+        rootDomain = parts.slice(-3).join('.');
+    }
+    
+    if (currentRisk === 0) return; // Assume SAFE_DOMAIN
+    
+    if (domainAgeCache.has(rootDomain)) {
+        applyAgePenalty(domainAgeCache.get(rootDomain), tabId, url, currentRisk);
+        return;
+    }
+
+    try {
+        const resp = await fetch(`https://rdap.org/domain/${rootDomain}`);
+        if (resp.ok) {
+            const data = await resp.json();
+            const regEvent = data.events?.find(e => e.eventAction === 'registration');
+            if (regEvent && regEvent.eventDate) {
+                const regDate = new Date(regEvent.eventDate);
+                const ageDays = (Date.now() - regDate.getTime()) / (1000 * 60 * 60 * 24);
+                const isSuspiciousAge = ageDays < 30; // 30 day threshold
+                domainAgeCache.set(rootDomain, isSuspiciousAge);
+                applyAgePenalty(isSuspiciousAge, tabId, url, currentRisk);
+                return;
+            }
+        }
+        domainAgeCache.set(rootDomain, false); // don't penalize on error/missing data
+    } catch(e) {
+        domainAgeCache.set(rootDomain, false);
+    }
+}
+
+function applyAgePenalty(isSuspiciousAge, tabId, url, currentRisk) {
+    if (!isSuspiciousAge) return;
+    const newRisk = Math.min(1.0, currentRisk + 0.4); 
+    if (newRisk >= BLOCK_THRESHOLD) {
+        logSecurityEvent(url, newRisk, {}, ['Suspicious-Domain-Age'], 'blocked', 'Domain registered < 30 days ago');
+        chrome.tabs.update(tabId, {
+            url: chrome.runtime.getURL('blocked.html') + `?url=${encodeURIComponent(url)}&risk=${newRisk}&reason=new_domain_age&flags=Suspicious-Domain-Age&details=${encodeURIComponent('Domain registered under 30 days ago')}`
+        });
+    } else if (newRisk >= WARN_THRESHOLD) {
+        logSecurityEvent(url, newRisk, {}, ['Suspicious-Domain-Age'], 'safe_mode', 'Domain registered < 30 days ago');
+        applySafeModeProtections(url, newRisk);
+    }
+}
+
+chrome.webNavigation.onCommitted.addListener(async (details) => {
+  if (details.frameId !== 0) return;
+  const url = details.url;
+  if (isRestrictedUrl(url) || !modelLoaded) return;
+
+  // Check one-time allow token FIRST — now backed by session storage to survive SW restarts
+  try {
+    const parsedUrl = new URL(url);
+    if (await isOneTimeAllowed(parsedUrl.hostname)) {
+      await consumeOneTimeAllow(parsedUrl.hostname); // Consume — blocked again on next visit
+      return;
+    }
+  } catch (e) {
+    return;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    
+    // Check if domain is in the global allowlist (Top 100k) including verified subdomains
+    if (isDomainAllowlisted(parsedUrl.hostname)) {
+        logSecurityEvent(url, 0.0, {}, ['Allowlist-Verified'], 'allowed', 'Verified Safe via Top 100k Allowlist');
+        return; // Immediately approve (0ms interception time)
+    }
+
+    const features = extractFeaturesFromUrl(url);
+    const risk = await predictProbability(features, url);
+
+    if (risk >= BLOCK_THRESHOLD) {
+      const mlFlags = [];
+      if (features.is_tunnel) mlFlags.push("Tunnel");
+      if (features.is_homograph) mlFlags.push("Homograph");
+      if (features.suspicious_tld) mlFlags.push("Risk-TLD");
+      if (features.subdomain_count > 2) mlFlags.push("Subdomains");
+      if (features.brand_impersonation) mlFlags.push("Brand-Impersonation");
+      if (features.tok_login || features.tok_signin || features.tok_auth) mlFlags.push("Login-Target");
+
+      logSecurityEvent(url, risk, features, mlFlags, 'blocked', 'High Risk Machine Learning Detection');
+      chrome.tabs.update(details.tabId, {
+        url: chrome.runtime.getURL('blocked.html') + `?url=${encodeURIComponent(url)}&risk=${risk}&reason=ml_detection&flags=${encodeURIComponent(mlFlags.join(','))}`
+      });
+    } else {
+      logSecurityEvent(url, risk, features, [], (risk >= WARN_THRESHOLD ? 'safe_mode' : 'allowed'));
+      checkDomainAge(parsedUrl.hostname, details.tabId, url, risk);
+    }
+  } catch (e) {
+    console.error('Scan error:', e);
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'getRiskForUrl') {
+    (async () => {
+      try {
+        if (!msg.url || isRestrictedUrl(msg.url)) {
+          sendResponse({ fused: 0, features: {}, isRestricted: true });
+          return;
+        }
+        const parsed = new URL(msg.url);
+        if (isDomainAllowlisted(parsed.hostname)) {
+          sendResponse({ fused: 0.0, features: {}, isAllowlisted: true });
+          return;
+        }
+        const features = extractFeaturesFromUrl(msg.url);
+        const p = await predictProbability(features, msg.url);
+        sendResponse({ fused: p, features: features });
+      } catch (err) {
+        sendResponse({ error: String(err) });
+      }
+    })();
+    return true;
+  }
+  
+  if (msg.action === 'allowSiteOnce') {
+      (async () => {
+          try {
+              const domain = new URL(msg.url).hostname;
+              const tabId = sender.tab ? sender.tab.id : null;
+
+              // Grant one-time pass in session storage — survives SW suspension
+              await addOneTimeAllow(domain);
+
+              // Track as false positive in stats only (no persistent allowlist)
+              chrome.storage.local.get(['stats'], (res) => {
+                  const stats = res.stats || { scanned: 0, blocked: 0, totalRisk: 0, falsePositives: 0, falseNegatives: 0 };
+                  stats.falsePositives = (stats.falsePositives || 0) + 1;
+                  chrome.storage.local.set({ stats }, () => {
+                      if (tabId) {
+                          chrome.tabs.update(tabId, { url: msg.url }, () => {
+                              sendResponse({ success: true });
+                          });
+                      } else {
+                          sendResponse({ success: true });
+                      }
+                  });
+              });
+          } catch(e) {
+              sendResponse({ success: false });
+          }
+      })();
+      return true;
+  }
+  
+  if (msg.action === 'checkForUpdates') {
+    (async () => {
+      const result = await checkForOTAUpdates(true);
+      sendResponse(result);
+    })();
+    return true;
+  }
+
+  if (msg.action === 'getModelStatus') {
+    (async () => {
+      const storage = await chrome.storage.local.get(['last_ota_check', 'model_version']);
+      const info = getModelInfo();
+      sendResponse({
+        ...info,
+        version: currentModelVersion,
+        allowlistSize: allowlist.size,
+        allowlistSource: allowlistSource,
+        lastOtaCheck: storage.last_ota_check || null
+      });
+    })();
+    return true;
+  }
+  
+  if (msg.action === 'reportSite') {
+      try {
+          chrome.storage.local.get(['stats'], (res) => {
+              const stats = res.stats || { scanned: 0, blocked: 0, totalRisk: 0, falsePositives: 0, falseNegatives: 0 };
+              stats.falseNegatives = (stats.falseNegatives || 0) + 1;
+              chrome.storage.local.set({ stats: stats });
+              sendResponse({ success: true });
+          });
+      } catch(e) {
+         sendResponse({ success: false });
+      }
+      return true;
+  }
+  if (msg.action === 'domAnalysisReport') {
+    const { riskScore, reasons, flags, url } = msg;
+    if (!url || isRestrictedUrl(url)) return;
+
+    try {
+      const hostname = new URL(url).hostname;
+      if (isDomainAllowlisted(hostname)) {
+        // Legitimate allowlisted domain: skip DOM heuristic reporting to avoid false positives
+        return;
+      }
+    } catch (e) {}
+
+    const extraFlags = flags || [];
+    const details = reasons && reasons.length ? reasons.join(' | ') : '';
+
+    if (riskScore >= BLOCK_THRESHOLD) {
+      // Do NOT re-block if the user already explicitly allowed this domain once
+      (async () => {
+        try {
+          const domain = new URL(url).hostname;
+          if (await isOneTimeAllowed(domain)) return; // User just allowed it — skip DOM re-block
+        } catch (e) {}
+
+        logSecurityEvent(url, riskScore, { is_tunnel: 0, is_homograph: 0, suspicious_tld: 0, subdomain_count: 0 }, extraFlags, 'blocked', details || 'DOM Heuristics Block');
+
+        const tabId = sender.tab ? sender.tab.id : null;
+        const blockUrl = chrome.runtime.getURL('blocked.html') + 
+          `?url=${encodeURIComponent(url)}&risk=${riskScore}&reason=dom_heuristics&flags=${encodeURIComponent(extraFlags.join(','))}&details=${encodeURIComponent(details)}`;
+
+        if (tabId) {
+          chrome.tabs.update(tabId, { url: blockUrl });
+        } else {
+          chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+            if (tabs[0] && tabs[0].url === url) {
+              chrome.tabs.update(tabs[0].id, { url: blockUrl });
+            }
+          });
+        }
+      })();
+    } else if (riskScore >= WARN_THRESHOLD) {
+      logSecurityEvent(url, riskScore, { is_tunnel: 0, is_homograph: 0, suspicious_tld: 0, subdomain_count: 0 }, extraFlags, 'safe_mode', details || 'DOM Suspicious Form/Identity Signals');
+      applySafeModeProtections(url, riskScore);
+    } else if (riskScore > 0) {
+      logSecurityEvent(url, riskScore, { is_tunnel: 0, is_homograph: 0, suspicious_tld: 0, subdomain_count: 0 }, extraFlags, 'allowed', details || 'DOM Heuristic Telemetry');
+    }
+  }
+});
+
+const TUNNEL_HEADERS = [
+  'ngrok-skip-browser-warning',
+  'x-ngrok-skip-browser-warning',
+  'x-serveo-',
+  'x-localtunnel-'
+];
+
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    if (details.type !== 'main_frame') return;
+    if (isRestrictedUrl(details.url)) return;
+    
+    let isTunnel = false;
+    if (details.responseHeaders) {
+      for (let header of details.responseHeaders) {
+        const headerName = header.name.toLowerCase();
+        if (TUNNEL_HEADERS.some(t => headerName.includes(t))) {
+          isTunnel = true;
+          break;
+        }
+      }
+    }
+    
+    if (isTunnel) {
+      logSecurityEvent(details.url, 1.0, { is_tunnel: 1, is_homograph: 0, suspicious_tld: 0, subdomain_count: 0 }, ['Tunnel-Header'], 'blocked', 'Reverse tunnel service header detected');
+      chrome.tabs.update(details.tabId, {
+        url: chrome.runtime.getURL('blocked.html') + `?url=${encodeURIComponent(details.url)}&risk=1.00&reason=tunnel_header_detected&flags=Tunnel-Header`
+      });
+    }
+  },
+  { urls: ['<all_urls>'] },
+  ['responseHeaders']
+);
