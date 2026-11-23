@@ -164,14 +164,14 @@ You can install PhishGuard into any Chromium-based browser in less than 60 secon
 
 ### Step 1: Download the Extension
 - **Option A (Official Website - Recommended):**
-  Visit the website — **[https://girinadh007.github.io/PG_WEB/](https://girinadh007.github.io/PG_WEB/)** to download the extension.
+  Visit the website — **[https://raasikulemanshaik07.github.io/PhishGuardWeb/](https://raasikulemanshaik07.github.io/PhishGuardWeb/)** to download the extension.
 - **Option B (Direct GitHub ZIP Download):**
   1. Click the green **Code** button at the top of this GitHub repository.
   2. Click **Download ZIP**.
   3. Extract the downloaded `PhishGuard-main.zip` file to a folder on your computer (e.g., `Desktop` or `Documents`).
 - **Option C (Via Git):**
   ```bash
-  git clone https://github.com/Girinadh007/PhishGuard.git
+  git clone https://github.com/raasikulemanshaik07/PhishGuardExtension.git
   ```
 
 ### Step 2: Open Extensions in Your Browser
