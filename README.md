@@ -1,308 +1,528 @@
-# PhishGuard 🛡️ — Privacy-Preserving In-Browser Phishing Detection
 
-[![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Model Accuracy](https://img.shields.io/badge/Model_Accuracy-99.20%25-success?style=flat-square)](https://github.com/Girinadh007/PhishGuard)
-[![Precision](https://img.shields.io/badge/Precision-99.87%25-brightgreen?style=flat-square)](https://github.com/Girinadh007/PhishGuard)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![Zero Cloud Calls](https://img.shields.io/badge/Privacy-100%25_Local_Inference-blueviolet?style=flat-square)](https://github.com/Girinadh007/PhishGuard)
-[![Browsers](https://img.shields.io/badge/Browsers-Chrome%20%7C%20Edge%20%7C%20Brave%20%7C%20Opera%20%7C%20Vivaldi-orange?style=flat-square)](#-supported--usable-browsers)
-[![Official Website](https://img.shields.io/badge/Official_Website-Visit_Web_Portal-informational?style=flat-square&logo=githubpages&logoColor=white)](https://girinadh007.github.io/PG_WEB/)
+# PhishGuard 🛡️
+### Privacy-Focused, Real-Time Phishing Detection for Chromium Browsers
 
-> 🌐 **Official Website:** Visit the website — **[https://raasikulemanshaik07.github.io/PhishGuardWeb/](https://raasikulemanshaik07.github.io/PhishGuardWeb/)** to download the extension.
+PhishGuard is a browser security extension designed to identify suspicious and potentially malicious URLs using lexical feature analysis, machine learning classification, domain intelligence, and browser-native security mechanisms.
 
-**PhishGuard** is a high-performance, privacy-first Chromium extension that detects and intercepts phishing attacks **100% client-side in real time**. 
+It combines lightweight URL analysis with an in-browser Random Forest classifier to help users identify phishing attempts before interacting with suspicious websites.
 
-Unlike conventional anti-phishing tools that transmit visited URLs to remote cloud APIs (introducing latency, privacy risks, and single-point-of-failure vulnerabilities), PhishGuard runs an optimized **Random Forest Ensemble Classifier** natively within the browser's background service worker.
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Chromium_Browsers-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Manifest-Version_3-green?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Detection-Random_Forest-orange?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Privacy-Local_Analysis-purple?style=for-the-badge" />
+</p>
 
----
-
-## 📑 Table of Contents
-- [Overview & Architecture](#-overview--architecture)
-- [Supported & Usable Browsers](#-supported--usable-browsers)
-- [Multi-Model Benchmark & Scientific Comparison](#-multi-model-benchmark--scientific-comparison)
-- [Why Random Forest is the Optimal Architecture](#-why-random-forest-is-the-optimal-architecture)
-- [How to Install in Your Browser (Chrome / Edge / Brave / Opera / Vivaldi)](#-how-to-install-in-your-browser-chrome--edge--brave--opera--vivaldi)
-- [How to Run and Benchmark the Models Locally](#-how-to-run-and-benchmark-the-models-locally)
-- [Heuristic & Lexical Feature Engineering](#-heuristic--lexical-feature-engineering)
-- [Threat Warning Screen & Security Dashboard](#-threat-warning-screen--security-dashboard)
-- [Privacy & Security Guarantee](#-privacy--security-guarantee)
-- [Troubleshooting & FAQ](#-troubleshooting--faq)
-- [License](#-license)
+<p align="center">
+  <b>Analyze suspicious URLs. Detect potential phishing. Make safer browsing decisions.</b>
+</p>
 
 ---
 
-## 🏛️ Overview & Architecture
+## 🌐 Project Links
 
-PhishGuard combines a high-speed local allowlist with a machine learning classification engine to provide sub-millisecond, zero-telemetry protection:
+- **Official Website:** [PhishGuard Web](https://raasikulemanshaik07.github.io/PhishGuardWeb/)
+- **Browser Extension Repository:** [PhishGuardExtension](https://github.com/raasikulemanshaik07/PhishGuardExtension)
+- **Website Repository:** [PhishGuardWeb](https://github.com/raasikulemanshaik07/PhishGuardWeb)
 
-```
-                               Incoming URL Request
+---
+
+## 📌 Overview
+
+Phishing attacks often rely on deceptive URLs, impersonated domains, suspicious subdomains, misleading keywords, and obfuscated web addresses to trick users into revealing sensitive information.
+
+PhishGuard analyzes URL characteristics and evaluates suspicious patterns using a locally executed machine learning model. Its browser-based architecture is designed to minimize dependence on centralized URL-scanning services while providing real-time threat assessment and user-facing warnings.
+
+The extension includes URL analysis, phishing classification, threat warnings, a manual URL scanner, security statistics, and allowlist management.
+
+### Core Objectives
+
+- Identify potentially malicious URLs using lexical and structural characteristics.
+- Perform phishing classification locally within the browser.
+- Intercept and warn users about URLs classified as suspicious.
+- Explain potential indicators of risk.
+- Provide a dashboard for manual URL analysis and threat monitoring.
+- Reduce unnecessary transmission of browsing information to centralized detection services.
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 🧠 Machine Learning Detection | Uses a Random Forest classifier for URL classification. |
+| ⚡ Local URL Analysis | Extracts URL features and evaluates them within the browser. |
+| 🔍 Lexical Feature Engineering | Analyzes URL structure, suspicious tokens, entropy, and other indicators. |
+| 🛡️ Threat Warning Interface | Displays warnings when URLs are identified as suspicious. |
+| 📊 Security Dashboard | Provides access to security statistics and analysis tools. |
+| 🔎 Manual URL Scanner | Allows users to manually inspect a URL. |
+| 🌐 Allowlist Management | Supports trusted-domain handling and custom allowlist functionality. |
+| 🔄 Model Update Support | Supports updating detection resources without requiring a complete extension replacement. |
+| 🔐 Privacy-Focused Design | Avoids sending complete visited URLs to a centralized phishing-classification server for routine local classification. |
+
+---
+
+## 🏗️ Architecture
+
+PhishGuard follows a browser-native architecture using the Chrome Extensions Manifest V3 model.
+
+### Detection Pipeline
+
+```text
+                 User Navigates to a URL
+                           │
+                           ▼
+               URL / Navigation Monitoring
+                           │
+                           ▼
+                Trusted-Domain Allowlist
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+         Trusted Match             No Trusted Match
+              │                         │
+              ▼                         ▼
+       Allow Navigation          URL Feature Extraction
                                         │
                                         ▼
-                         ┌─────────────────────────────┐
-                         │   Top 100,000 Allowlist     │ ── (Match: < 0.001 ms) ──► Allow Navigation
-                         └─────────────────────────────┘
-                                        │ (Unmatched)
-                                        ▼
-                         ┌─────────────────────────────┐
-                         │ 27-Feature Lexical Engine   │ (Entropy, TLD, Subdomains, Tokens)
-                         └─────────────────────────────┘
+                                Feature Processing
                                         │
                                         ▼
-                         ┌─────────────────────────────┐
-                         │  Random Forest (In-Browser) │ (Inference: ~0.0038 ms pure JS)
-                         └─────────────────────────────┘
-                                  │            │
-                     Probability >= 0.5   Probability < 0.5
-                                  │            │
-                                  ▼            ▼
-                           [BLOCK & WARN]    [ALLOW]
+                              Random Forest Classifier
+                                        │
+                                        ▼
+                               Threat Classification
+                                        │
+                         ┌──────────────┴──────────────┐
+                         │                           │
+                    Low-Risk Result              Suspicious Result
+                         │                           │
+                         ▼                           ▼
+                 Continue Navigation          Block / Warning Flow
+                                                     │
+                                                     ▼
+                                             Threat Warning Page
 ```
 
-### Key Highlights
-- **100% Local Inference**: Zero remote API calls. Your browsing history never leaves your device.
-- **Microsecond Latency**: Evaluates suspicious URLs in `< 0.05ms`, intercepting malicious domains before HTML rendering begins.
-- **Top 100K Pre-compiled Allowlist**: Instantly bypasses scanning for verified global domains, cutting false alarms to near zero.
-- **Interactive Explanations**: Blocked pages explain *why* the link is suspicious (e.g., suspicious TLD, excessive subdomains, brand impersonation tokens, high entropy).
-- **Executive Security Dashboard**: Live telemetry, whitelist management, threat logs, and manual URL scanner.
+### Main Components
+
+- **Background Service Worker:** Handles extension background logic, navigation monitoring, detection workflow, and related security operations.
+- **Feature Extraction Engine:** Extracts numerical and categorical indicators from URLs.
+- **Random Forest Classifier:** Evaluates extracted features to classify suspicious URLs.
+- **Allowlist System:** Handles trusted domains and reduces unnecessary analysis of recognized domains.
+- **Threat Warning Interface:** Displays a security warning and analysis details for flagged URLs.
+- **Security Dashboard:** Provides manual URL inspection and access to extension security features.
+- **Popup Interface:** Provides access to the extension's primary functionality.
 
 ---
 
-## 🌍 Supported & Usable Browsers
+## 🧠 Machine Learning Model
 
-PhishGuard is built adhering strictly to the modern **Manifest V3 (MV3)** WebExtensions specification. Because it relies exclusively on standard client-side JavaScript (`chrome.*` API namespace) and typed array evaluation, it is compatible with a wide array of desktop and mobile browsers:
+PhishGuard uses a Random Forest classification model trained to distinguish phishing URLs from legitimate URLs using URL-derived features.
 
-### 1. Chromium-Based Browsers (Native / 100% Out of the Box)
-All browsers powered by the Chromium engine support PhishGuard immediately without any code changes or compilation:
+The model is converted into a browser-compatible representation to enable inference using JavaScript without requiring a Python runtime during normal extension operation.
 
-| Browser | Platform | Compatibility | Installation Path |
-| :--- | :--- | :---: | :--- |
-| **Google Chrome** | Windows / macOS / Linux / ChromeOS |  **Native MV3** | `chrome://extensions/` |
-| **Microsoft Edge** | Windows / macOS / Linux |  **Native MV3** | `edge://extensions/` |
-| **Brave Browser** | Windows / macOS / Linux |  **Native MV3** | `brave://extensions/` |
-| **Opera & Opera GX** | Windows / macOS / Linux |  **Native MV3** | `opera://extensions/` |
-| **Vivaldi** | Windows / macOS / Linux |  **Native MV3** | `vivaldi://extensions/` |
-| **Arc Browser** | macOS / Windows |  **Native MV3** | `arc://extensions/` |
-| **Chromium** (Open-Source) | Windows / macOS / Linux / BSD |  **Native MV3** | `chrome://extensions/` |
-| **Yandex Browser** | Windows / macOS / Linux |  **Native MV3** | `browser://extensions/` |
+### Why Random Forest?
 
-#### Mobile Browsers (Android)
-- **Kiwi Browser (Android)**: Full extension and developer mode support.
-- **Yandex Mobile Browser**: Extensions loaded via Developer Options.
-- **Microsoft Edge (Android Canary/Dev)**: Extension support enabled via experimental flags.
+Random Forest is suitable for URL classification because it:
+
+- Handles non-linear relationships between URL features.
+- Captures combinations of suspicious indicators.
+- Works effectively with structured numerical features.
+- Supports relatively efficient inference.
+- Can be deployed without requiring a remote inference API.
+
+A URL may not be suspicious because of a single characteristic. Multiple indicators, such as unusual subdomain depth, suspicious keywords, character distribution, and URL entropy, can collectively contribute to its classification.
 
 ---
 
-### 2. Mozilla Firefox (Gecko Engine)
-- **Status**: Compatible with minor manifest adjustments.
-- **Details**: Firefox supports Manifest V3 (`manifest_version: 3`). To load into Firefox (`about:debugging`):
-  1. Add `"browser_specific_settings": { "gecko": { "id": "phishguard@local" } }` to `manifest.json`.
-  2. Firefox currently prefers event background pages or background scripts (`"background": { "scripts": ["background.js"] }`).
+## 🔬 URL Feature Engineering
+
+PhishGuard evaluates URL characteristics through lexical and structural analysis.
+
+The feature set includes indicators such as:
+
+| Feature Category | Purpose |
+|---|---|
+| URL Entropy | Identifies unusually random or obfuscated URL patterns. |
+| Path Entropy | Evaluates randomness within URL paths. |
+| Subdomain Structure | Measures subdomain count and structural complexity. |
+| Digit-to-Letter Ratio | Detects unusual numerical patterns. |
+| Character Distribution | Evaluates uppercase/lowercase and character patterns. |
+| Special Characters | Analyzes characters such as `@`, `-`, `_`, `=`, `?`, and `%`. |
+| Suspicious Keywords | Identifies tokens associated with authentication or account manipulation. |
+| TLD Indicators | Identifies potentially suspicious top-level domain patterns. |
+| IP-Based URLs | Detects URLs using direct IP addresses instead of domain names. |
+| Punycode Indicators | Identifies internationalized domain representations that may require scrutiny. |
+| Tunneling Indicators | Detects domains associated with tunneling or temporary hosting services. |
+
+These indicators are used as inputs to the classification pipeline rather than treated as standalone proof that a website is malicious.
 
 ---
 
-### 3. Apple Safari (macOS & iOS)
-- **Status**: Convertible via Xcode.
-- **Details**: Apple supports Manifest V3 WebExtensions on Safari 15.4+. To run on Safari, wrap the project into an Xcode Safari extension app using Apple's official converter:
-  ```bash
-  xcrun safari-web-extension-converter /path/to/PhishGuard
-  ```
+## 🚨 Threat Warning System
+
+When a URL is identified as suspicious, PhishGuard can present a warning interface designed to help users understand the potential risk before proceeding.
+
+The warning interface includes features such as:
+
+- Threat severity indicators.
+- Suspicious URL characteristics.
+- Detected lexical indicators.
+- Technical analysis information.
+- Safe navigation options.
+- A user-controlled override flow, where supported.
+
+The warning system is intended to provide context rather than simply display a generic block message.
 
 ---
 
-## 📊 Multi-Model Benchmark & Scientific Comparison
+## 📊 Security Dashboard
 
-We conducted a comprehensive benchmark across **8 industry-standard machine learning architectures** evaluated on the complete dataset of **450,177 candidate URLs** (382,650 train / 67,527 holdout test):
+The PhishGuard dashboard provides a centralized interface for interacting with the extension's security functionality.
 
-| Model Architecture | Accuracy | Precision | Recall (Sensitivity) | Specificity | F1-Score | ROC-AUC | False Positive Rate (FPR) | Inference Latency | Model Footprint |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Random Forest (PhishGuard)** | **99.20%** | **99.87%** | **96.69%** | **99.96%** | **98.26%** | **99.59%** | **0.04%** | **3.76 µs (JS) / 2.7 ms (Py)** | **3.39 MB (JSON) / 5.7 MB** |
-| **LightGBM (Gradient Boosting)** | 99.39% | 99.77% | 97.58% | 99.93% | 98.66% | 99.75% | 0.07% | 421.2 µs | 0.33 MB* |
-| **XGBoost (Extreme Gradient Boosting)** | 99.29% | 99.86% | 97.09% | 99.96% | 98.45% | 99.73% | 0.04% | 595.4 µs | 0.26 MB* |
-| **Decision Tree (CART)** | 99.18% | 99.74% | 96.74% | 99.92% | 98.21% | 98.40% | 0.08% | 47.3 µs | 0.05 MB |
-| **Logistic Regression** | 98.87% | 99.73% | 95.40% | 99.92% | 97.51% | 99.26% | 0.08% | 63.8 µs | < 0.01 MB |
-| **Support Vector Machine (Linear SVM)** | 98.86% | 99.60% | 95.49% | 99.88% | 97.50% | 99.27% | 0.12% | 1507.2 µs | < 0.01 MB |
-| **AdaBoost (Adaptive Boosting)** | 98.68% | 99.94% | 94.35% | 99.98% | 97.06% | 99.41% | 0.02% | 3146.6 µs | 0.03 MB |
-| **Gaussian Naive Bayes** | 98.00% | 95.76% | 95.61% | 98.72% | 95.68% | 98.80% | 1.28% | 155.1 µs | < 0.01 MB |
+### Dashboard Capabilities
 
-*\* Note on XGBoost / LightGBM footprints: While model weights appear compact in Python, deploying them in a browser extension requires shipping a 15–25 MB compiled WebAssembly (WASM) engine and runtime.*
+- View security statistics.
+- Review threat-related information.
+- Inspect URLs manually.
+- View URL analysis results.
+- Manage trusted-domain or allowlist entries.
+- Access relevant extension controls.
 
-### Benchmark Visualization
-Below is the empirical benchmark visualization comparing all 8 models across Accuracy, Precision, Recall, F1-Score, False Positive Rate, and Latency:
-
-![PhishGuard Multi-Model Benchmark](model_comparison_chart.png)
+The exact statistics displayed depend on the information maintained by the extension during runtime.
 
 ---
 
-## 🏆 Why Random Forest is the Optimal Architecture
+## 🔒 Privacy & Data Handling
 
-While gradient-boosted trees (XGBoost / LightGBM) demonstrate marginal metric differences on desktop benchmarks, **Random Forest is decisively superior for browser-extension client-side cybersecurity** for four core reasons:
+PhishGuard is designed with a local-first detection approach.
 
-### 1. Zero-Dependency, Pure JavaScript Execution
-- Deploying XGBoost or LightGBM in a browser requires embedding massive WebAssembly (WASM) packages (15–25 MB) and tensor runtimes. This balloons extension bundle size, delays browser cold starts, and triggers memory constraints.
-- In contrast, PhishGuard flattens Random Forest decision trees into **contiguous typed arrays (`Int16Array`, `Float32Array`) in pure JavaScript**. The browser executes tree traversals natively in **~4.06 microseconds** without garbage collection overhead or external dependencies.
+### Local Processing
 
-### 2. Extremely Low False Positive Rate (FPR: 0.09%)
-- In consumer security extensions, a false positive (blocking a legitimate website) immediately destroys user trust.
-- Naive Bayes produces a **1.21% False Positive Rate** (over 12x higher than Random Forest) because its independence assumption fails on correlated URL features (e.g., token frequency and Shannon entropy).
-- Random Forest’s bootstrap aggregation (bagging) averages out variance, keeping FPR down to **0.09%** without sacrificing recall.
+Routine URL feature extraction and machine learning classification are designed to run locally in the browser. Full visited URLs are not intentionally transmitted to a centralized phishing-classification server as part of the local inference process.
 
-### 3. Non-Linear Feature Interaction Detection
-- Phishing indicators are inherently non-linear. For example, having 3 hyphens in a URL is normal on a WordPress news blog, but **3 hyphens + subdomain depth > 2 + login token + free TLD** is almost certainly phishing.
-- Linear classifiers (Logistic Regression, Linear SVM) fail to capture these higher-order feature combinations unless explicitly engineered with costly polynomial terms. Random Forest captures conditional decision splits naturally.
+### External Network Requests
 
-### 4. Resistance to Adversarial Obfuscation
-- Single Decision Trees (CART) are sensitive to minor lexical tweaks (adversarial evasion).
-- By aggregating 100 independently trained estimators, Random Forest resists small keyword variations and domain-masking techniques.
+Some auxiliary functionality may require external connections, such as:
 
----
+- Retrieving model or allowlist updates.
+- Domain registration information lookups through RDAP services.
+- Accessing external resources used by update or intelligence features.
 
-## 🚀 How to Install in Your Browser (Chrome / Edge / Brave / Opera / Vivaldi)
+These requests are separate from the local URL classification process and may disclose limited information to the external service involved.
 
-You can install PhishGuard into any Chromium-based browser in less than 60 seconds without installing Python or Node.js.
+### Privacy Considerations
 
-### Step 1: Download the Extension
-- **Option A (Official Website - Recommended):**
-  Visit the website — **[https://raasikulemanshaik07.github.io/PhishGuardWeb/](https://raasikulemanshaik07.github.io/PhishGuardWeb/)** to download the extension.
-- **Option B (Direct GitHub ZIP Download):**
-  1. Click the green **Code** button at the top of this GitHub repository.
-  2. Click **Download ZIP**.
-  3. Extract the downloaded `PhishGuard-main.zip` file to a folder on your computer (e.g., `Desktop` or `Documents`).
-- **Option C (Via Git):**
-  ```bash
-  git clone https://github.com/raasikulemanshaik07/PhishGuardExtension.git
-  ```
+- Core URL classification is performed locally.
+- The extension is designed to avoid centralized URL classification.
+- Optional external features may require internet access.
+- Users should review the extension's permissions and network-related functionality before installation.
 
-### Step 2: Open Extensions in Your Browser
-- **Google Chrome**: Navigate to `chrome://extensions/`
-- **Microsoft Edge**: Navigate to `edge://extensions/`
-- **Brave Browser**: Navigate to `brave://extensions/`
-- **Opera / Vivaldi**: Navigate to `opera://extensions/` or `vivaldi://extensions/`
-
-### Step 3: Enable Developer Mode
-- In the top right corner of the Extensions page, toggle the **Developer mode** switch to **ON**.
-
-### Step 4: Load the Extension
-1. Click the **Load unpacked** button in the top left corner.
-2. Select the unzipped `PhishGuard` folder (the folder containing `manifest.json`).
-3. Click **Select Folder**.
-
-### Step 5: Pin & Test
-1. Click the puzzle icon in your browser toolbar and pin **PhishGuard**.
-2. Click the PhishGuard icon to open the security popup.
-3. Click **Open Security Dashboard** to view live stats and test any URL in the manual scanner!
+> PhishGuard is privacy-focused, but it should not be described as a completely network-silent extension while external update or domain-intelligence requests remain enabled.
 
 ---
 
-## 💻 How to Run and Benchmark the Models Locally
+## 🌍 Browser Compatibility
 
-If you are a researcher, developer, or student wishing to reproduce the benchmark suite or train models on your machine:
+PhishGuard is developed for Chromium-based browsers using Manifest V3.
+
+### Primary Target Browsers
+
+| Browser | Support Target |
+|---|---|
+| Google Chrome | Primary target |
+| Microsoft Edge | Chromium-based compatibility |
+| Brave | Chromium-based compatibility |
+| Opera | Chromium-based compatibility |
+| Vivaldi | Chromium-based compatibility |
+
+Compatibility may vary depending on browser version, extension API implementation, permissions, and platform.
+
+Browsers that support Chromium extensions may be compatible, but compatibility should be verified through actual testing before being considered officially supported.
+
+Firefox and Safari are not listed as officially supported targets in this release.
+
+---
+
+## 📥 Installation
+
+PhishGuard can be installed manually using Chrome's extension developer mode.
+
+### Option 1: Download from the Official Website
+
+1. Visit the [PhishGuard Official Website](https://raasikulemanshaik07.github.io/PhishGuardWeb/).
+2. Download the extension package provided on the website.
+3. Extract the downloaded archive if required.
+4. Open the extensions page in your browser.
+
+### Option 2: Download from GitHub
+
+1. Open the [PhishGuardExtension repository](https://github.com/raasikulemanshaik07/PhishGuardExtension).
+2. Click the **Code** button.
+3. Select **Download ZIP**.
+4. Extract the ZIP file to a folder on your computer.
+
+### Load the Extension
+
+#### Google Chrome
+
+Navigate to:
+
+```text
+chrome://extensions/
+```
+
+#### Microsoft Edge
+
+Navigate to:
+
+```text
+edge://extensions/
+```
+
+#### Brave
+
+Navigate to:
+
+```text
+brave://extensions/
+```
+
+#### Opera
+
+Navigate to:
+
+```text
+opera://extensions/
+```
+
+#### Vivaldi
+
+Navigate to:
+
+```text
+vivaldi://extensions/
+```
+
+### Installation Steps
+
+1. Open your browser's extensions page.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select the extracted PhishGuard extension directory containing `manifest.json`.
+5. Confirm that PhishGuard appears in your extensions list.
+6. Pin the extension to your browser toolbar for convenient access.
+
+---
+
+## 🧪 Model Benchmarking
+
+PhishGuard includes scripts intended for model comparison, performance evaluation, and model export.
+
+The benchmarking workflow is designed to compare multiple machine learning classifiers using URL-derived features and a common dataset.
+
+### Models Evaluated
+
+The comparison framework includes:
+
+- Random Forest
+- LightGBM
+- XGBoost
+- Decision Tree
+- Logistic Regression
+- Linear Support Vector Machine
+- AdaBoost
+- Gaussian Naive Bayes
+
+### Evaluation Metrics
+
+| Metric | Purpose |
+|---|---|
+| Accuracy | Overall proportion of correctly classified samples. |
+| Precision | Proportion of predicted phishing samples that are phishing. |
+| Recall | Proportion of phishing samples correctly detected. |
+| Specificity | Proportion of legitimate samples correctly classified. |
+| F1-Score | Harmonic mean of precision and recall. |
+| ROC-AUC | Ability to distinguish between classes across thresholds. |
+| False Positive Rate | Proportion of legitimate samples incorrectly classified as phishing. |
+| Inference Latency | Time required for model inference under the measured conditions. |
+| Model Footprint | Size of the model representation. |
+
+### Reported Random Forest Results
+
+The following values are from the project's benchmark documentation and should be interpreted as dataset-specific experimental results, not a guarantee of real-world detection performance.
+
+| Metric | Reported Result |
+|---|---:|
+| Accuracy | 99.20% |
+| Precision | 99.87% |
+| Recall | 96.69% |
+| Specificity | 99.96% |
+| F1-Score | 98.26% |
+| ROC-AUC | 99.59% |
+
+> Benchmark results depend on the dataset, data split, feature engineering, training configuration, and test environment. They do not represent guaranteed detection rates against all phishing attacks.
+
+---
+
+## 💻 Running the Benchmark Locally
+
+Benchmarking and model training require Python and the appropriate dependencies.
 
 ### Prerequisites
-- **Python 3.10+** (Recommended)
-- **Node.js 18+** (Optional, for browser JS engine benchmarks)
-- Git (Optional)
 
-### 1. Setup Your Environment
-Open a terminal in the project root:
+- Python 3.10 or later
+- pip
+- Git
+- Node.js (only for JavaScript benchmarking, if required)
+
+### Clone the Repository
+
 ```bash
-# Clone or navigate into directory
+git clone https://github.com/raasikulemanshaik07/PhishGuardExtension.git
 cd PhishGuardExtension
+```
 
-# Install Python ML dependencies
+### Install Python Dependencies
+
+```bash
 pip install scikit-learn pandas numpy matplotlib joblib xgboost lightgbm
 ```
 
-### 2. Run the Multi-Model Benchmark Suite
-Execute the 8-model comparison benchmark:
+### Run Model Comparison
+
 ```bash
 python scripts/compare_models.py
 ```
-*(On Windows with multiple Python versions installed, run: `py -3.10 scripts/compare_models.py`)*
 
-**What this script does:**
-1. Loads the complete 450,177 URL dataset from `phishing_dataset.csv` (382,650 train / 67,527 holdout test).
-2. Extracts 27 lexical and entropy features per URL.
-3. Trains and benchmarks 8 distinct ML models under identical splits.
-4. Outputs comprehensive confusion matrices, accuracy, precision, recall, specificity, F1-scores, and microsecond latency.
-5. Saves formatted results to `model_comparison_results.json` and `model_comparison_results.csv`.
-6. Generates high-resolution visualization charts saved as `model_comparison_chart.png`.
-7. Outputs an IEEE-ready LaTeX table block for research publications.
+On Windows, if you have multiple Python installations:
 
-### 3. Run the Native JavaScript In-Browser Benchmark
-To measure raw JavaScript execution speed of the deployed model:
+```powershell
+py -3.10 scripts/compare_models.py
+```
+
+### Run JavaScript Benchmarking
+
+If the project includes the JavaScript benchmark script and Node.js is installed:
+
 ```bash
 node scripts/benchmark.js
 ```
-This tests feature extraction and tree evaluation using Node.js to simulate the browser service worker environment.
 
-### 4. Retrain and Export a New Model
-To retrain the Random Forest model and compile it directly into the browser-ready `model/model.json`:
+### Retrain and Export the Random Forest Model
+
+If the training script and required dataset are available:
+
 ```bash
 python train_export_rf.py
 ```
 
----
-
-## 🔬 Heuristic & Lexical Feature Engineering
-
-PhishGuard extracts **27 granular features** directly from raw URLs in microseconds without network lookups:
-
-1. **Shannon Entropy (URL & Path)**: Measures informational randomness to detect DGA (Domain Generation Algorithm) links and encrypted tokens.
-2. **Subdomain Metrics**: Subdomain count and depth to detect multi-level tunneling attacks (e.g., `paypal.com.account-verify.xyz`).
-3. **Lexical Ratios**: Digit-to-letter ratio, uppercase-to-lowercase ratio, and special character counts (`@`, `-`, `_`, `=`, `?`, `%`).
-4. **Suspicious Keyword Tokens**: Detection of credential-harvesting keywords (`login`, `secure`, `account`, `verify`, `bank`, `signin`, `wp-admin`, `auth`).
-5. **High-Risk TLD Detection**: Identification of abused free or cheap TLDs (`.xyz`, `.top`, `.pw`, `.icu`, `.tk`, `.ml`, `.club`).
-6. **Reverse-Proxy Tunneling Domains**: Flags domains hosted through tunneling services (`ngrok`, `cloudflare`, `localtunnel`, `serveo`).
-7. **Punycode / Homograph Indicators**: Detects `xn--` prefixes commonly used in internationalized character spoofing attacks.
-8. **IPv4 / IPv6 Embeds**: Direct IP addresses used instead of legitimate registered domain names.
+> The benchmark and training scripts require their corresponding datasets and supporting files. Verify that these resources are present and correctly configured before running the scripts.
 
 ---
 
-## 🖥️ Threat Warning Screen & Security Dashboard
+## 📁 Project Structure
 
-PhishGuard includes a modern, high-contrast user interface built with responsive glassmorphism:
+The extension contains browser-facing interfaces, detection logic, model assets, and development or benchmarking resources.
 
-### 1. Interactive Warning Screen (`blocked.html`)
-When a phishing link is intercepted, navigation is halted instantly. Users are presented with:
-- **Threat Severity Meter**: Dynamic risk calculation (Low, Suspicious, Critical).
-- **Automated Danger Breakdown**: Highlights exact red flags found in the URL.
-- **Interactive Technical Analysis**: Displays Shannon entropy, detected tokens, and lexical heuristics.
-- **Safe Return & One-Time Override**: Safe exit to home page with an advanced bypass toggle for security analysts.
+```text
+PhishGuardExtension/
+│
+├── manifest.json
+├── background.js
+├── content_script.js
+│
+├── popup.html
+├── popup.js
+│
+├── blocked.html
+├── blocked.js
+│
+├── dashboard.html
+├── dashboard.js
+│
+├── model/
+│
+├── scripts/
+│   ├── compare_models.py
+│   └── benchmark.js
+│
+├── train_export_rf.py
+├── README.md
+└── LICENSE
+```
 
-### 2. Live Security Dashboard (`dashboard.html`)
-- **Real-Time Analytics**: Total URLs scanned, threats blocked, and system uptime.
-- **Threat Vector Breakdown**: Visual charts categorizing detected attack types.
-- **Manual URL Inspector**: Paste any URL to receive instant client-side threat scoring.
-- **Allowlist & Whitelist Controls**: Inspect top domains and manage personal custom whitelists.
+> This is a representative structure. Files and directories may vary between project versions.
 
 ---
 
-## 🔒 Privacy & Security Guarantee
+## ⚠️ Limitations
 
-PhishGuard was built from the ground up to respect user privacy:
+PhishGuard is a URL-based detection tool and has limitations.
 
-- 🛡️ **Zero Cloud Logging**: URLs are never transmitted to external servers.
-- ⚡ **Manifest V3 Compliant**: Uses modern declarative NetRequest and lightweight service workers.
-- 🚫 **No Analytics or Trackers**: No third-party telemetry, tracking pixels, or remote analytics scripts.
-- 🌐 **100% Offline Capable**: Continues protecting you even when disconnected from the internet.
+- A legitimate URL may occasionally be classified as suspicious.
+- A phishing URL may evade detection if its characteristics resemble legitimate websites.
+- URL lexical analysis alone cannot fully inspect website content, scripts, or server-side behavior.
+- Newly created phishing domains may not exhibit obvious suspicious patterns.
+- Domain reputation and registration data may be unavailable or incomplete.
+- Detection performance can vary across phishing campaigns, datasets, and attack techniques.
+- Classification results should not be treated as an absolute guarantee of website safety.
+
+Users should continue to verify website identities, avoid entering credentials on unfamiliar pages, and exercise caution with links received through messages or emails.
 
 ---
 
-## ❓ Troubleshooting & FAQ
+## 🛠️ Technology Stack
 
-### Q: Why does my browser say "Developer mode"?
-**A:** Because you loaded the extension unpacked from source files rather than the Chrome Web Store. This is standard behavior for open-source extensions and is completely safe.
+| Technology | Role |
+|---|---|
+| JavaScript | Browser extension logic and local inference |
+| HTML5 | Extension interfaces |
+| CSS3 | UI styling |
+| Chrome Extensions API | Browser integration |
+| Manifest V3 | Extension architecture |
+| Python | Model training and evaluation |
+| Scikit-learn | Machine learning model development |
+| NumPy / Pandas | Data processing |
+| Matplotlib | Benchmark visualization |
+| Node.js | Optional JavaScript benchmarking |
 
-### Q: Can I run this with Python 3.12 or 3.13?
-**A:** Yes! For retraining and running `compare_models.py`, any Python 3.10+ version works. If using multiple versions on Windows, use `py -3.10 scripts/compare_models.py` or create a standard virtual environment (`python -m venv venv`).
+---
 
-### Q: Does PhishGuard slow down page loads?
-**A:** No. Top 100k verified domains resolve in `< 0.001ms` via an optimized lookup table. Even unlisted domains evaluate in `0.032ms`—imperceptible to human perception (faster than a single monitor frame refresh).
+## 🔮 Future Improvements
+
+Potential future enhancements include:
+
+- Improved phishing detection using additional URL and domain features.
+- Enhanced explainability for classification decisions.
+- More comprehensive testing across browser versions.
+- Improved false-positive handling.
+- Expanded domain intelligence.
+- Reproducible benchmarking and dataset documentation.
+- Enhanced dashboard analytics.
+- More robust model-update verification and security.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is distributed under the license included in the repository.
+
+Please review the `LICENSE` file for licensing terms, usage permissions, attribution requirements, and redistribution conditions.
+
+---
+
+## ⚠️ Disclaimer
+
+PhishGuard is an experimental browser security project intended for educational, research, and defensive purposes.
+
+It is not a replacement for comprehensive browser security, endpoint protection, or professional security solutions. Detection results are probabilistic, and the extension cannot guarantee that every phishing website will be detected or every legitimate website will be correctly classified.
+
+Always verify URLs and exercise caution when sharing personal information online.
+
+---
+
+<p align="center">
+  <b>PhishGuard — Safer browsing through local URL intelligence.</b>
+</p>
