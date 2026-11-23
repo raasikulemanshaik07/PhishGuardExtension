@@ -9,7 +9,7 @@
 [![Browsers](https://img.shields.io/badge/Browsers-Chrome%20%7C%20Edge%20%7C%20Brave%20%7C%20Opera%20%7C%20Vivaldi-orange?style=flat-square)](#-supported--usable-browsers)
 [![Official Website](https://img.shields.io/badge/Official_Website-Visit_Web_Portal-informational?style=flat-square&logo=githubpages&logoColor=white)](https://girinadh007.github.io/PG_WEB/)
 
-> 🌐 **Official Website:** Visit the website — **[https://girinadh007.github.io/PG_WEB/](https://girinadh007.github.io/PG_WEB/)** to download the extension.
+> 🌐 **Official Website:** Visit the website — **[https://raasikulemanshaik07.github.io/PhishGuardWeb/](https://raasikulemanshaik07.github.io/PhishGuardWeb/)** to download the extension.
 
 **PhishGuard** is a high-performance, privacy-first Chromium extension that detects and intercepts phishing attacks **100% client-side in real time**. 
 
